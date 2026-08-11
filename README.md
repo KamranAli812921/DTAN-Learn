@@ -2,6 +2,25 @@
 
 A role-based Learning & Training Management System built with Next.js 14 (App Router), TypeScript, MongoDB/Mongoose, NextAuth, Cloudinary, Resend, and the Zoom API. Three roles — **Admin**, **Teacher**, **Student** — with strict server-side ownership checks on every request.
 
+## Features
+
+**Admin**
+- Manage admin, teacher, and student accounts (create, deactivate — soft delete)
+- Manage courses and batches
+- Full attendance control: view/override any record, grant grace attendance (whole batch or hand-picked students), and view the full override audit trail (who changed what, and why) for every record
+- Create/grade assignments, review submissions, publish results
+- Upload/manage course materials and post announcements
+
+**Teacher**
+- Manage their own students within assigned batches
+- Schedule Zoom live classes and sync attendance (webhook + manual "Sync attendance" fallback)
+- Mark/override attendance with a required reason, and grant grace attendance to a whole batch or specific students who completed a task/challenge — every override is logged to an audit trail visible to all teachers and admins, not just the one who made it
+- Create assignments, grade submissions, publish results, upload materials, post announcements
+
+**Student**
+- View their profile, enrolled course, and batch
+- Track their own attendance history (Zoom-synced sessions + any manual overrides)
+- View/submit assignments, check results, download materials, read announcements
 
 ## Tech stack
 
@@ -48,11 +67,23 @@ A role-based Learning & Training Management System built with Next.js 14 (App Ro
 ## Install & run
 
 ```bash
+git clone https://github.com/KamranAli812921/DTAN-Learn.git
+cd DTAN-Learn
 npm install
 npm run dev
 ```
 
 The app runs at `http://localhost:3000` and redirects `/` to `/login`.
+
+## Available scripts
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Start the dev server (`predev` auto-frees port 3000 if a stale process is holding it) |
+| `npm run build` | Production build |
+| `npm run start` | Run the production build (run `build` first) |
+| `npm run lint` | Run ESLint (`next lint`) |
+| `npm run seed` | Create the first admin account from `SEED_ADMIN_*` env vars |
 
 ## Seed the first admin account
 
@@ -101,7 +132,7 @@ scripts/seed.ts                         — creates the first admin account
 - File uploads are proxied through a server route to Cloudinary (the API secret never reaches the browser), with extension and size (20MB) validation.
 - The forgot-password flow uses a bcrypt-hashed 6-digit code with a 10-minute expiry, a 5-attempt lockout, and single-use tokens — never a reusable link. It also returns an identical response whether or not the email exists, and is rate-limited (3 requests / 15 min) per email and per IP.
 - Deactivation is soft (`status: inactive`) rather than hard-deleting user accounts.
-- Every manual attendance mark or override writes an `AttendanceAuditLog` entry — no exceptions.
+- Every manual attendance mark or override writes an `AttendanceAuditLog` entry — no exceptions. The audit trail (previous → new status, reason, who changed it, when) is readable by any admin or teacher, not just the one who made the change.
 
 ## Deploying to Vercel
 
