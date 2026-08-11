@@ -132,7 +132,7 @@ scripts/seed.ts                         — creates the first admin account
 - File uploads are proxied through a server route to Cloudinary (the API secret never reaches the browser), with extension and size (20MB) validation.
 - The forgot-password flow uses a bcrypt-hashed 6-digit code with a 10-minute expiry, a 5-attempt lockout, and single-use tokens — never a reusable link. It also returns an identical response whether or not the email exists, and is rate-limited (3 requests / 15 min) per email and per IP.
 - Deactivation is soft (`status: inactive`) rather than hard-deleting user accounts.
-- Every manual attendance mark or override writes an `AttendanceAuditLog` entry — no exceptions. The audit trail (previous → new status, reason, who changed it, when) is readable by any admin or teacher, not just the one who made the change.
+- Every manual attendance mark or override writes an `AttendanceAuditLog` entry — no exceptions. The audit trail (previous → new status, reason, who changed it, when) is readable by any admin, and by any teacher for their own batches — not just the one who made the change, but still scoped by batch ownership like every other endpoint.
 
 ## Deploying to Vercel
 
