@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 140 15% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 140 15% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 140 15% 12%;
+
+    /* Brand green — matches the logo mark (pure green, hue 120). */
+    --primary: 123 44% 34%;
+    --primary-foreground: 120 25% 98%;
+
+    --secondary: 120 20% 95%;
+    --secondary-foreground: 140 15% 12%;
+
+    --muted: 120 20% 95%;
+    --muted-foreground: 140 8% 45%;
+
+    --accent: 122 25% 92%;
+    --accent-foreground: 140 15% 12%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Distinct from --primary (teal-leaning green) so status badges don't
+       visually collide with the green brand/button color. */
+    --success: 165 75% 30%;
+    --success-foreground: 210 40% 98%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 11%;
+
+    --border: 120 15% 88%;
+    --input: 120 15% 88%;
+    --ring: 123 44% 34%;
+
+    --radius: 0.6rem;
+  }
+
+  .dark {
+    --background: 140 20% 6%;
+    --foreground: 120 20% 96%;
+
+    --card: 140 18% 9%;
+    --card-foreground: 120 20% 96%;
+
+    --popover: 140 18% 9%;
+    --popover-foreground: 120 20% 96%;
+
+    --primary: 123 45% 55%;
+    --primary-foreground: 140 25% 9%;
+
+    --secondary: 140 15% 16%;
+    --secondary-foreground: 120 20% 96%;
+
+    --muted: 140 15% 16%;
+    --muted-foreground: 120 10% 65%;
+
+    --accent: 140 15% 18%;
+    --accent-foreground: 120 20% 96%;
+
+    --destructive: 0 63% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 165 60% 45%;
+    --success-foreground: 140 25% 9%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 11%;
+
+    --border: 140 15% 19%;
+    --input: 140 15% 19%;
+    --ring: 123 45% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+}

@@ -1,0 +1,42 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# environment variables — NEVER commit real secrets (Mongo URI, NextAuth
+# secret, Cloudinary/Resend/Zoom keys, seed admin password, etc).
+# Every .env* variant is ignored by default; only the checked-in example
+# template (placeholder values only, no real credentials) stays tracked.
+.env*
+!.env.example
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# editor / OS
+.vscode/
+.idea/
+Thumbs.db
