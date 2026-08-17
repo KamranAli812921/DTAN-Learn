@@ -1,7 +1,14 @@
 import path from "path";
+import dns from "dns";
 import dotenv from "dotenv";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+
+// Some Windows setups leave Node's own resolver pointed at 127.0.0.1 with
+// nothing listening there, which breaks the SRV lookup mongodb+srv:// needs
+// even though the OS resolver (nslookup, browsers, etc.) works fine. Force
+// a real DNS server so the Atlas connection doesn't ECONNREFUSED on querySrv.
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
@@ -19,7 +26,7 @@ async function seed() {
   const password = process.env.SEED_ADMIN_PASSWORD || "ChangeMe123!";
 
   console.log(`Connecting to ${uri}...`);
-  await mongoose.connect(uri);
+  await mongoose.connect(uri, { dbName: "DTAN-Learn" });
 
   const existing = await User.findOne({ $or: [{ username }, { email }] });
   if (existing) {
