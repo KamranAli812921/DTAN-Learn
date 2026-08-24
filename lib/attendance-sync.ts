@@ -116,6 +116,44 @@ export async function mergeAttendanceSegment(params: {
   await attendance.save();
 }
 
+/**
+ * Mark every student in the live class's batch who still has no Attendance
+ * record for that session's date as "absent" — covers students who never
+ * joined the Zoom meeting at all (including the degenerate case where no one
+ * joined). Called once the class is finalized (see POST
+ * /api/attendance/zoom-sync), after every actual participant segment has
+ * already been merged in, so anyone still missing a record genuinely didn't
+ * attend. Idempotent: only creates records where none exist yet.
+ */
+export async function markAbsentees(liveClassId: string): Promise<number> {
+  const liveClass = await LiveClass.findById(liveClassId);
+  if (!liveClass) return 0;
+
+  const date = startOfDay(liveClass.startTime);
+  const students = await Student.find({ batch: liveClass.batch }).select("_id");
+
+  let count = 0;
+  for (const student of students) {
+    const existing = await Attendance.findOne({ student: student._id, batch: liveClass.batch, date });
+    if (existing) continue;
+
+    await Attendance.create({
+      student: student._id,
+      batch: liveClass.batch,
+      liveClass: liveClass._id,
+      date,
+      status: "absent",
+      source: "zoom",
+      zoomMeetingId: liveClass.zoomMeetingId,
+      sessions: [],
+      totalDurationMinutes: 0,
+    });
+    count += 1;
+  }
+
+  return count;
+}
+
 /** Resolve a Zoom participant's student by email (case-insensitive). */
 export async function findStudentByEmail(email: string | undefined) {
   if (!email) return null;

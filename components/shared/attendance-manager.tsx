@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { MobileList, MobileCard, MobileCardHeader, MobileField } from "@/components/shared/mobile-list";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { useToast } from "@/hooks/use-toast";
@@ -69,11 +70,18 @@ function toDateInput(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+// Attendance dates are normalized to the UTC day boundary server-side, so a
+// session's "date" must be derived the same way, not via the browser's
+// local timezone (see lib/attendance-sync.ts's startOfDay).
+function toUTCDateInput(iso: string) {
+  return new Date(iso).toISOString().slice(0, 10);
+}
+
 export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
   const { toast } = useToast();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState("");
-  const [date, setDate] = useState(toDateInput(new Date()));
+  const [selectedLiveClassId, setSelectedLiveClassId] = useState("");
   const [students, setStudents] = useState<Student[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [liveClasses, setLiveClasses] = useState<LiveClass[]>([]);
@@ -113,23 +121,41 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A "session" is one scheduled live class. Attendance is viewed and
+  // marked per session, not per calendar date — clicking a session in the
+  // "Scheduled live classes" list below loads that class's roster.
   function loadBatchData() {
     if (!selectedBatch) return;
     setLoading(true);
     Promise.all([
       api.get<Student[]>(`/api/students?batchId=${selectedBatch}`),
-      api.get<AttendanceRecord[]>(`/api/attendance?batchId=${selectedBatch}&from=${date}&to=${date}`),
       api.get<LiveClass[]>(`/api/live-classes?batchId=${selectedBatch}`),
     ])
-      .then(([s, a, lc]) => {
+      .then(([s, lc]) => {
         setStudents(s);
-        setRecords(a);
         setLiveClasses(lc);
+        const stillValid = lc.some((c) => c._id === selectedLiveClassId);
+        const target = stillValid ? selectedLiveClassId : lc[0]?._id ?? "";
+        setSelectedLiveClassId(target);
+        if (target) {
+          return api.get<AttendanceRecord[]>(`/api/attendance?liveClassId=${target}`).then(setRecords);
+        }
+        setRecords([]);
       })
       .finally(() => setLoading(false));
   }
 
-  useEffect(loadBatchData, [selectedBatch, date]);
+  useEffect(loadBatchData, [selectedBatch]);
+
+  function selectSession(liveClassId: string) {
+    if (liveClassId === selectedLiveClassId) return;
+    setSelectedLiveClassId(liveClassId);
+    setLoading(true);
+    api
+      .get<AttendanceRecord[]>(`/api/attendance?liveClassId=${liveClassId}`)
+      .then(setRecords)
+      .finally(() => setLoading(false));
+  }
 
   const recordByStudent = useMemo(() => {
     const map = new Map<string, AttendanceRecord>();
@@ -138,6 +164,8 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
   }, [records]);
 
   const selectedBatchObj = batches.find((b) => b._id === selectedBatch);
+  const selectedSession = liveClasses.find((lc) => lc._id === selectedLiveClassId);
+  const sessionDateStr = selectedSession ? toUTCDateInput(selectedSession.startTime) : toDateInput(new Date());
   const scheduledCount = liveClasses.filter((lc) => lc.status !== "cancelled").length;
   const totalClasses = selectedBatchObj?.totalClasses ?? 0;
   const remainingClasses = totalClasses > 0 ? Math.max(0, totalClasses - scheduledCount) : null;
@@ -193,8 +221,13 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
   async function handleSync(liveClassId: string) {
     setSyncingId(liveClassId);
     try {
-      const res = await api.post<{ matched: number; unmatched: number }>("/api/attendance/zoom-sync", { liveClassId });
-      toast({ title: `Synced attendance: ${res.matched} matched, ${res.unmatched} unmatched.` });
+      const res = await api.post<{ matched: number; unmatched: number; absentMarked: number }>("/api/attendance/zoom-sync", {
+        liveClassId,
+      });
+      toast({
+        title: `Synced attendance: ${res.matched} matched, ${res.unmatched} unmatched.`,
+        description: res.absentMarked > 0 ? `${res.absentMarked} student(s) who never joined were marked absent.` : undefined,
+      });
       loadBatchData();
     } catch (err) {
       toast({ variant: "destructive", title: err instanceof Error ? err.message : "Sync failed." });
@@ -216,7 +249,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
         "/api/attendance/grace",
         {
           batch: selectedBatch,
-          date,
+          date: sessionDateStr,
           reason: graceReason,
           students: graceTargetSelected ? graceStudentIds : undefined,
         }
@@ -278,7 +311,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
         await api.post("/api/attendance", {
           student: markTarget.student._id,
           batch: selectedBatch,
-          date,
+          date: sessionDateStr,
           status: markStatus,
           remarks: markReason || undefined,
         });
@@ -302,7 +335,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
           <>
             <Dialog open={graceOpen} onOpenChange={setGraceOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" disabled={!selectedBatch}>
+                <Button variant="outline" disabled={!selectedBatch || !selectedLiveClassId} title={!selectedLiveClassId ? "Select a session first." : undefined}>
                   <Gift className="h-4 w-4" /> Grace attendance
                 </Button>
               </DialogTrigger>
@@ -313,14 +346,29 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
                     {graceTargetSelected ? (
                       <>
                         Marks the selected students in <strong>{batches.find((b) => b._id === selectedBatch)?.batchName}</strong> as{" "}
-                        <strong>present</strong> for {formatDate(date)} — useful for rewarding individual students (e.g.
-                        those who completed a task/challenge) without penalizing anyone's real attendance record.
+                        <strong>present</strong> for{" "}
+                        {selectedSession ? (
+                          <>
+                            the <strong>{selectedSession.topic}</strong> session ({formatDate(sessionDateStr)})
+                          </>
+                        ) : (
+                          formatDate(sessionDateStr)
+                        )}{" "}
+                        — useful for rewarding individual students (e.g. those who completed a task/challenge) without
+                        penalizing anyone's real attendance record.
                       </>
                     ) : (
                       <>
                         Marks every student in <strong>{batches.find((b) => b._id === selectedBatch)?.batchName}</strong> as{" "}
-                        <strong>present</strong> for {formatDate(date)} — useful for rewarding a task/challenge without
-                        penalizing anyone's real attendance record.
+                        <strong>present</strong> for{" "}
+                        {selectedSession ? (
+                          <>
+                            the <strong>{selectedSession.topic}</strong> session ({formatDate(sessionDateStr)})
+                          </>
+                        ) : (
+                          formatDate(sessionDateStr)
+                        )}{" "}
+                        — useful for rewarding a task/challenge without penalizing anyone's real attendance record.
                       </>
                     )}{" "}
                     Students already marked present are left as-is.
@@ -461,10 +509,6 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
             </SelectContent>
           </Select>
         </div>
-        <div className="w-full sm:w-48 space-y-1.5">
-          <Label>Date</Label>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </div>
       </div>
 
       {selectedBatch && (
@@ -484,38 +528,65 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Scheduled live classes</CardTitle>
+            <p className="text-sm text-muted-foreground">Click a session to view and mark its attendance below.</p>
           </CardHeader>
           <CardContent className="space-y-3">
-            {liveClasses.map((lc) => (
-              <div key={lc._id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border rounded-md p-3">
-                <div className="min-w-0">
-                  <p className="font-medium text-sm break-words">{lc.topic}</p>
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground mt-1">
-                    <span>
-                      {formatDate(lc.startTime, true)} · {lc.durationMinutes} min
-                    </span>
-                    <StatusBadge status={lc.status} />
+            {liveClasses.map((lc) => {
+              const isSelected = lc._id === selectedLiveClassId;
+              return (
+                <div
+                  key={lc._id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => selectSession(lc._id)}
+                  onKeyDown={(e) => e.key === "Enter" && selectSession(lc._id)}
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 border rounded-md p-3 cursor-pointer transition-colors ${
+                    isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm break-words">{lc.topic}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                      <span>
+                        {formatDate(lc.startTime, true)} · {lc.durationMinutes} min
+                      </span>
+                      <StatusBadge status={lc.status} />
+                      {isSelected && <Badge variant="outline">Selected</Badge>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a href={lc.zoomJoinUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="outline" size="sm">
+                        <ExternalLink className="h-3.5 w-3.5" /> Join URL
+                      </Button>
+                    </a>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSync(lc._id);
+                      }}
+                      disabled={syncingId === lc._id}
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${syncingId === lc._id ? "animate-spin" : ""}`} /> Sync attendance
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <a href={lc.zoomJoinUrl} target="_blank" rel="noreferrer">
-                    <Button variant="outline" size="sm">
-                      <ExternalLink className="h-3.5 w-3.5" /> Join URL
-                    </Button>
-                  </a>
-                  <Button variant="secondary" size="sm" onClick={() => handleSync(lc._id)} disabled={syncingId === lc._id}>
-                    <RefreshCw className={`h-3.5 w-3.5 ${syncingId === lc._id ? "animate-spin" : ""}`} /> Sync attendance
-                  </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>Attendance for {formatDate(date)}</CardTitle>
+          <CardTitle>{selectedSession ? `Attendance — ${selectedSession.topic}` : "Attendance"}</CardTitle>
+          {selectedSession && (
+            <p className="text-sm text-muted-foreground">
+              {formatDate(selectedSession.startTime, true)} · {selectedSession.durationMinutes} min
+            </p>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
@@ -524,6 +595,8 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
                 <Skeleton key={i} className="h-10" />
               ))}
             </div>
+          ) : liveClasses.length === 0 ? (
+            <EmptyState title="No sessions scheduled yet" description="Schedule a live class to start recording attendance." icon={Video} />
           ) : students.length === 0 ? (
             <EmptyState title="No students in this batch" />
           ) : (

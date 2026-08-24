@@ -4,7 +4,7 @@ import { LiveClass } from "@/models";
 import { requireRole, ApiError, withErrorHandling } from "@/lib/api-helpers";
 import { getTeacherProfileId } from "@/lib/permissions";
 import { getMeetingParticipants } from "@/lib/zoom";
-import { mergeAttendanceSegment, findStudentByEmail } from "@/lib/attendance-sync";
+import { mergeAttendanceSegment, findStudentByEmail, markAbsentees } from "@/lib/attendance-sync";
 
 /**
  * Polling fallback (spec 6.3): after a class ends, backfill anything the
@@ -53,5 +53,9 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   liveClass.status = "completed";
   await liveClass.save();
 
-  return NextResponse.json({ matched, unmatched, totalSegments: participants.length });
+  // Anyone still without a record at this point never joined at all —
+  // including the degenerate case where no one joined the meeting.
+  const absentMarked = await markAbsentees(liveClass._id.toString());
+
+  return NextResponse.json({ matched, unmatched, totalSegments: participants.length, absentMarked });
 });
