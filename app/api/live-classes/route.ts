@@ -72,7 +72,19 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   // (already-created) live class — students can still see it via the
   // dashboard's "Join a live class" widget even without the announcement.
   try {
-    const when = data.startTime.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+    // Format in the scheduling teacher's browser timezone (if provided) so the
+    // announcement text matches what they picked, rather than the server's
+    // own timezone (which can differ and silently shift the displayed time).
+    let when: string;
+    try {
+      when = data.startTime.toLocaleString("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: data.timeZone,
+      });
+    } catch {
+      when = data.startTime.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+    }
     await Announcement.create({
       createdBy: session.user.id,
       title: `Live class scheduled: ${data.topic}`,

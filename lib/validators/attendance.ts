@@ -26,6 +26,7 @@ export const liveClassSchema = z.object({
   batch: objectId,
   topic: z.string().min(2).max(150),
   startTime: z.coerce.date(),
+  timeZone: z.string().max(100).optional(),
   durationMinutes: z.number().int().min(5).max(600),
   joinWindowMinutes: z.number().int().min(0).max(120).optional(),
 });

@@ -142,6 +142,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
         course: (batch as any)?.course?._id ?? (batch as any)?.course,
         topic: scheduleForm.topic,
         startTime: new Date(scheduleForm.startTime).toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         durationMinutes: Number(scheduleForm.durationMinutes),
         joinWindowMinutes: Number(scheduleForm.joinWindowMinutes),
       });
