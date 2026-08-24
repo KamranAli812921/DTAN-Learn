@@ -3,6 +3,7 @@ import { getServerSession, type Session } from "next-auth";
 import { ZodError } from "zod";
 import { authOptions } from "@/lib/auth";
 import type { UserRole } from "@/models/User";
+import { ZoomApiError } from "@/lib/zoom";
 
 export class ApiError extends Error {
   status: number;
@@ -58,6 +59,11 @@ export function errorResponse(err: unknown): NextResponse {
   }
   if (err instanceof Error && (err as { code?: number }).code === 11000) {
     return NextResponse.json({ error: "A record with these details already exists." }, { status: 409 });
+  }
+  if (err instanceof ZoomApiError) {
+    // eslint-disable-next-line no-console
+    console.error(err);
+    return NextResponse.json({ error: `Zoom error: ${err.message}` }, { status: 502 });
   }
   // eslint-disable-next-line no-console
   console.error(err);
