@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Video, ExternalLink, Gift, History } from "lucide-react";
+import { RefreshCw, Video, ExternalLink, Gift, History, ListChecks } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { MobileList, MobileCard, MobileCardHeader, MobileField } from "@/components/shared/mobile-list";
+import { StatCard } from "@/components/dashboard/stat-card";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/client-api";
 import { formatDate } from "@/lib/utils";
@@ -24,6 +25,7 @@ import { formatDate } from "@/lib/utils";
 interface Batch {
   _id: string;
   batchName: string;
+  totalClasses: number;
 }
 interface Student {
   _id: string;
@@ -99,6 +101,10 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
   const [historyLogs, setHistoryLogs] = useState<AuditLogEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  const [totalClassesOpen, setTotalClassesOpen] = useState(false);
+  const [totalClassesForm, setTotalClassesForm] = useState(0);
+  const [savingTotalClasses, setSavingTotalClasses] = useState(false);
+
   useEffect(() => {
     api.get<Batch[]>("/api/batches").then((b) => {
       setBatches(b);
@@ -130,6 +136,33 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
     records.forEach((r) => map.set(r.student._id, r));
     return map;
   }, [records]);
+
+  const selectedBatchObj = batches.find((b) => b._id === selectedBatch);
+  const scheduledCount = liveClasses.filter((lc) => lc.status !== "cancelled").length;
+  const totalClasses = selectedBatchObj?.totalClasses ?? 0;
+  const remainingClasses = totalClasses > 0 ? Math.max(0, totalClasses - scheduledCount) : null;
+  const classesCapReached = remainingClasses !== null && remainingClasses <= 0;
+
+  function openTotalClasses() {
+    setTotalClassesForm(totalClasses);
+    setTotalClassesOpen(true);
+  }
+
+  async function handleSaveTotalClasses(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedBatch) return;
+    setSavingTotalClasses(true);
+    try {
+      const updated = await api.patch<Batch>(`/api/batches/${selectedBatch}`, { totalClasses: totalClassesForm });
+      setBatches((prev) => prev.map((b) => (b._id === selectedBatch ? { ...b, totalClasses: updated.totalClasses } : b)));
+      toast({ title: "Total classes updated." });
+      setTotalClassesOpen(false);
+    } catch (err) {
+      toast({ variant: "destructive", title: err instanceof Error ? err.message : "Failed to update total classes." });
+    } finally {
+      setSavingTotalClasses(false);
+    }
+  }
 
   async function handleSchedule(e: React.FormEvent) {
     e.preventDefault();
@@ -351,9 +384,13 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
               </DialogContent>
             </Dialog>
 
+            <Button variant="outline" disabled={!selectedBatch} onClick={openTotalClasses}>
+              <ListChecks className="h-4 w-4" /> Total classes
+            </Button>
+
             <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
               <DialogTrigger asChild>
-                <Button disabled={!selectedBatch}>
+                <Button disabled={!selectedBatch || classesCapReached} title={classesCapReached ? "All planned classes for this batch are already scheduled." : undefined}>
                   <Video className="h-4 w-4" /> Schedule live class
                 </Button>
               </DialogTrigger>
@@ -429,6 +466,19 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
       </div>
+
+      {selectedBatch && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+          <StatCard label="Total classes" value={totalClasses > 0 ? totalClasses : "Uncapped"} icon={ListChecks} />
+          <StatCard label="Classes scheduled" value={scheduledCount} icon={Video} />
+          <StatCard
+            label="Classes remaining"
+            value={remainingClasses !== null ? remainingClasses : "—"}
+            icon={ListChecks}
+            tone={classesCapReached ? "warning" : "default"}
+          />
+        </div>
+      )}
 
       {liveClasses.length > 0 && (
         <Card className="mb-6">
@@ -683,6 +733,35 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
               ))}
             </ul>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={totalClassesOpen} onOpenChange={setTotalClassesOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Total classes</DialogTitle>
+            <DialogDescription>
+              Planned number of live classes for <strong>{selectedBatchObj?.batchName}</strong>. Scheduling is blocked once this
+              many classes have been scheduled. Set to 0 for no limit.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveTotalClasses} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Total classes</Label>
+              <Input
+                type="number"
+                min={0}
+                value={totalClassesForm}
+                onChange={(e) => setTotalClassesForm(Number(e.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">{scheduledCount} already scheduled.</p>
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={savingTotalClasses}>
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

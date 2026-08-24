@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/db";
-import { LiveClass, Announcement } from "@/models";
+import { LiveClass, Announcement, Batch } from "@/models";
 import { liveClassSchema } from "@/lib/validators/attendance";
-import { requireRole, requireSession, withErrorHandling } from "@/lib/api-helpers";
+import { requireRole, requireSession, ApiError, withErrorHandling } from "@/lib/api-helpers";
 import { getTeacherProfileId, getTeacherBatchIds, assertTeacherOwnsBatch, getStudentProfileId } from "@/lib/permissions";
 import { createZoomMeeting } from "@/lib/zoom";
 import { Student } from "@/models";
@@ -37,16 +37,29 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   const body = await req.json();
   const data = liveClassSchema.parse(body);
 
+  const batch = await Batch.findById(data.batch);
+  if (!batch) throw new ApiError(404, "Batch not found.");
+
   let teacherId: string;
   if (session.user.role === "teacher") {
     teacherId = await getTeacherProfileId(session);
     await assertTeacherOwnsBatch(teacherId, data.batch);
   } else {
     // Admin scheduling on behalf of the batch's assigned teacher.
-    const { Batch } = await import("@/models");
-    const batch = await Batch.findById(data.batch);
-    if (!batch) throw new (await import("@/lib/api-helpers")).ApiError(404, "Batch not found.");
     teacherId = batch.teacher.toString();
+  }
+
+  // Gate scheduling on the batch's planned total-classes count (0 = uncapped,
+  // for batches created before this field existed). Cancelled classes don't
+  // count against the cap since they never happened.
+  if (batch.totalClasses > 0) {
+    const scheduledCount = await LiveClass.countDocuments({ batch: data.batch, status: { $ne: "cancelled" } });
+    if (scheduledCount >= batch.totalClasses) {
+      throw new ApiError(
+        400,
+        `All ${batch.totalClasses} planned class(es) for this batch are already scheduled. Increase total classes to schedule more.`
+      );
+    }
   }
 
   const meeting = await createZoomMeeting({

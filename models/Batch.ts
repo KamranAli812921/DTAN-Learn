@@ -9,6 +9,11 @@ export interface IBatch extends Document {
   startDate: Date;
   endDate?: Date;
   status: BatchStatus;
+  /** Planned number of live classes for this batch's run of the course.
+   *  0 means uncapped (not yet set) — live-class scheduling and the
+   *  remaining-classes UI treat 0 as "no limit" for backward compatibility
+   *  with batches created before this field existed. */
+  totalClasses: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,6 +26,7 @@ const BatchSchema = new Schema<IBatch>(
     startDate: { type: Date, required: true },
     endDate: { type: Date },
     status: { type: String, enum: ["upcoming", "active", "completed"], default: "upcoming" },
+    totalClasses: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true }
 );

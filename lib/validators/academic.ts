@@ -18,6 +18,14 @@ export const batchSchema = z.object({
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
   status: z.enum(["upcoming", "active", "completed"]).optional(),
+  // 0/omitted = uncapped. See models/Batch.ts.
+  totalClasses: z.number().int().min(0).max(500).optional(),
+});
+
+// Teachers may only ever adjust the planned class count on their own batch,
+// never reassign the course/teacher/schedule — see PATCH /api/batches/[id].
+export const batchTotalClassesSchema = z.object({
+  totalClasses: z.number().int().min(0).max(500),
 });
 
 export const enrollmentSchema = z.object({

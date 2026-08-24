@@ -28,22 +28,42 @@ interface AttendanceRecord {
   sessions: AttendanceSession[];
   remarks?: string;
 }
+interface Batch {
+  _id: string;
+  totalClasses: number;
+}
+interface LiveClass {
+  _id: string;
+  status: "scheduled" | "completed" | "cancelled";
+}
 
 export default function StudentAttendancePage() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [batch, setBatch] = useState<Batch | null>(null);
+  const [liveClasses, setLiveClasses] = useState<LiveClass[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api
-      .get<AttendanceRecord[]>("/api/attendance")
-      .then(setRecords)
+    Promise.all([
+      api.get<AttendanceRecord[]>("/api/attendance"),
+      api.get<Batch[]>("/api/batches"),
+    ])
+      .then(([a, batches]) => {
+        setRecords(a);
+        const own = batches[0] ?? null;
+        setBatch(own);
+        if (own) return api.get<LiveClass[]>(`/api/live-classes?batchId=${own._id}`).then(setLiveClasses);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const stats = useMemo(() => {
     const present = records.filter((r) => r.status === "present" || r.status === "late").length;
-    return { total: records.length, present, pct: percentage(present, records.length) };
-  }, [records]);
+    const scheduledCount = liveClasses.filter((lc) => lc.status !== "cancelled").length;
+    const totalClasses = batch?.totalClasses ?? 0;
+    const remaining = totalClasses > 0 ? Math.max(0, totalClasses - scheduledCount) : null;
+    return { total: records.length, present, pct: percentage(present, records.length), totalClasses, remaining };
+  }, [records, liveClasses, batch]);
 
   return (
     <div>
@@ -52,7 +72,9 @@ export default function StudentAttendancePage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         <StatCard label="Attendance %" value={`${stats.pct}%`} icon={CalendarCheck} tone={stats.pct >= 75 ? "success" : "warning"} />
         <StatCard label="Classes attended" value={stats.present} icon={CalendarCheck} />
-        <StatCard label="Total classes" value={stats.total} icon={CalendarCheck} />
+        <StatCard label="Classes held so far" value={stats.total} icon={CalendarCheck} />
+        <StatCard label="Planned classes" value={stats.totalClasses > 0 ? stats.totalClasses : "Uncapped"} icon={CalendarCheck} />
+        <StatCard label="Classes remaining" value={stats.remaining !== null ? stats.remaining : "—"} icon={CalendarCheck} />
       </div>
 
       <Card>

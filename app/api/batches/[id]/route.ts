@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import { Batch } from "@/models";
-import { batchSchema } from "@/lib/validators/academic";
+import { batchSchema, batchTotalClassesSchema } from "@/lib/validators/academic";
 import { requireRole, requireSession, ApiError, withErrorHandling } from "@/lib/api-helpers";
-import { isValidObjectId, getTeacherProfileId, getStudentProfileId } from "@/lib/permissions";
+import { isValidObjectId, getTeacherProfileId, getStudentProfileId, assertTeacherOwnsBatch } from "@/lib/permissions";
 import { Student } from "@/models";
 
 export const GET = withErrorHandling(async (_req: NextRequest, { params }: { params: { id: string } }) => {
@@ -27,11 +27,22 @@ export const GET = withErrorHandling(async (_req: NextRequest, { params }: { par
 });
 
 export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { params: { id: string } }) => {
-  await requireRole("admin");
+  const session = await requireRole("admin", "teacher");
   await connectDB();
   if (!isValidObjectId(params.id)) throw new ApiError(400, "Invalid batch id.");
   const body = await req.json();
-  const data = batchSchema.partial().parse(body);
+
+  // Teachers may only adjust the planned total-classes count on their own
+  // batch — everything else (course/teacher/schedule/status) is admin-only.
+  let data: Record<string, unknown>;
+  if (session.user.role === "teacher") {
+    const teacherId = await getTeacherProfileId(session);
+    await assertTeacherOwnsBatch(teacherId, params.id);
+    data = batchTotalClassesSchema.parse(body);
+  } else {
+    data = batchSchema.partial().parse(body);
+  }
+
   const batch = await Batch.findByIdAndUpdate(params.id, data, { new: true, runValidators: true });
   if (!batch) throw new ApiError(404, "Batch not found.");
   return NextResponse.json(batch);

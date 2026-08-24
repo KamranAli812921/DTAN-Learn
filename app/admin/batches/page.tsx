@@ -36,9 +36,18 @@ interface Batch {
   startDate: string;
   endDate?: string;
   status: "upcoming" | "active" | "completed";
+  totalClasses: number;
 }
 
-const emptyForm = { batchName: "", course: "", teacher: "", startDate: "", endDate: "", status: "upcoming" as Batch["status"] };
+const emptyForm = {
+  batchName: "",
+  course: "",
+  teacher: "",
+  startDate: "",
+  endDate: "",
+  status: "upcoming" as Batch["status"],
+  totalClasses: 0,
+};
 
 export default function BatchesPage() {
   const { toast } = useToast();
@@ -79,6 +88,7 @@ export default function BatchesPage() {
       startDate: batch.startDate.slice(0, 10),
       endDate: batch.endDate ? batch.endDate.slice(0, 10) : "",
       status: batch.status,
+      totalClasses: batch.totalClasses ?? 0,
     });
     setOpen(true);
   }
@@ -167,18 +177,31 @@ export default function BatchesPage() {
                     <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as Batch["status"] })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="upcoming">Upcoming</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as Batch["status"] })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="upcoming">Upcoming</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Total classes</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={form.totalClasses}
+                      onChange={(e) => setForm({ ...form, totalClasses: Number(e.target.value) })}
+                      placeholder="0 = uncapped"
+                    />
+                    <p className="text-xs text-muted-foreground">Planned class count for this batch. 0 means no limit.</p>
+                  </div>
                 </div>
                 <DialogFooter>
                   <Button type="submit" disabled={saving || !form.course || !form.teacher}>
@@ -211,6 +234,7 @@ export default function BatchesPage() {
                       <TableHead>Course</TableHead>
                       <TableHead>Teacher</TableHead>
                       <TableHead>Schedule</TableHead>
+                      <TableHead>Total classes</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -223,6 +247,9 @@ export default function BatchesPage() {
                         <TableCell>{b.teacher?.fullName}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {formatDate(b.startDate)} {b.endDate ? `– ${formatDate(b.endDate)}` : ""}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {b.totalClasses > 0 ? b.totalClasses : "Uncapped"}
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={b.status} />
@@ -255,6 +282,7 @@ export default function BatchesPage() {
                     <MobileField label="Schedule">
                       {formatDate(b.startDate)} {b.endDate ? `– ${formatDate(b.endDate)}` : ""}
                     </MobileField>
+                    <MobileField label="Total classes">{b.totalClasses > 0 ? b.totalClasses : "Uncapped"}</MobileField>
                     <MobileField label="Status">
                       <StatusBadge status={b.status} />
                     </MobileField>
