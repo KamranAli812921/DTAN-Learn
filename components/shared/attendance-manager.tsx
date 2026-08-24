@@ -99,6 +99,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
   const [marking, setMarking] = useState(false);
 
   const [graceOpen, setGraceOpen] = useState(false);
+  const [graceLiveClassId, setGraceLiveClassId] = useState("");
   const [graceReason, setGraceReason] = useState("");
   const [granting, setGranting] = useState(false);
   const [graceTargetSelected, setGraceTargetSelected] = useState(false);
@@ -166,6 +167,13 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
   const selectedBatchObj = batches.find((b) => b._id === selectedBatch);
   const selectedSession = liveClasses.find((lc) => lc._id === selectedLiveClassId);
   const sessionDateStr = selectedSession ? toUTCDateInput(selectedSession.startTime) : toDateInput(new Date());
+
+  // Grace attendance targets whichever session is picked inside its own
+  // dialog — independent of the session currently open in the main view —
+  // so admin/teacher can grant it for any specific session, not just the one
+  // they happen to be looking at.
+  const graceSession = liveClasses.find((lc) => lc._id === graceLiveClassId);
+  const graceDateStr = graceSession ? toUTCDateInput(graceSession.startTime) : sessionDateStr;
   const scheduledCount = liveClasses.filter((lc) => lc.status !== "cancelled").length;
   const totalClasses = selectedBatchObj?.totalClasses ?? 0;
   const remainingClasses = totalClasses > 0 ? Math.max(0, totalClasses - scheduledCount) : null;
@@ -236,9 +244,18 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
     }
   }
 
+  function openGrace() {
+    setGraceLiveClassId(selectedLiveClassId || liveClasses[0]?._id || "");
+    setGraceOpen(true);
+  }
+
   async function handleGrace(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedBatch) return;
+    if (!graceLiveClassId) {
+      toast({ variant: "destructive", title: "Select a session first." });
+      return;
+    }
     if (graceTargetSelected && graceStudentIds.length === 0) {
       toast({ variant: "destructive", title: "Select at least one student." });
       return;
@@ -249,7 +266,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
         "/api/attendance/grace",
         {
           batch: selectedBatch,
-          date: sessionDateStr,
+          date: graceDateStr,
           reason: graceReason,
           students: graceTargetSelected ? graceStudentIds : undefined,
         }
@@ -333,9 +350,9 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
         description="Zoom-synced attendance with manual override support."
         actions={
           <>
-            <Dialog open={graceOpen} onOpenChange={setGraceOpen}>
+            <Dialog open={graceOpen} onOpenChange={(open) => (open ? openGrace() : setGraceOpen(false))}>
               <DialogTrigger asChild>
-                <Button variant="outline" disabled={!selectedBatch || !selectedLiveClassId} title={!selectedLiveClassId ? "Select a session first." : undefined}>
+                <Button variant="outline" disabled={!selectedBatch || liveClasses.length === 0} title={liveClasses.length === 0 ? "Schedule a session first." : undefined}>
                   <Gift className="h-4 w-4" /> Grace attendance
                 </Button>
               </DialogTrigger>
@@ -346,35 +363,35 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
                     {graceTargetSelected ? (
                       <>
                         Marks the selected students in <strong>{batches.find((b) => b._id === selectedBatch)?.batchName}</strong> as{" "}
-                        <strong>present</strong> for{" "}
-                        {selectedSession ? (
-                          <>
-                            the <strong>{selectedSession.topic}</strong> session ({formatDate(sessionDateStr)})
-                          </>
-                        ) : (
-                          formatDate(sessionDateStr)
-                        )}{" "}
-                        — useful for rewarding individual students (e.g. those who completed a task/challenge) without
-                        penalizing anyone's real attendance record.
+                        <strong>present</strong> for the chosen session — useful for rewarding individual students (e.g.
+                        those who completed a task/challenge) without penalizing anyone's real attendance record.
                       </>
                     ) : (
                       <>
                         Marks every student in <strong>{batches.find((b) => b._id === selectedBatch)?.batchName}</strong> as{" "}
-                        <strong>present</strong> for{" "}
-                        {selectedSession ? (
-                          <>
-                            the <strong>{selectedSession.topic}</strong> session ({formatDate(sessionDateStr)})
-                          </>
-                        ) : (
-                          formatDate(sessionDateStr)
-                        )}{" "}
-                        — useful for rewarding a task/challenge without penalizing anyone's real attendance record.
+                        <strong>present</strong> for the chosen session — useful for rewarding a task/challenge without
+                        penalizing anyone's real attendance record.
                       </>
                     )}{" "}
                     Students already marked present are left as-is.
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleGrace} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Session</Label>
+                    <Select value={graceLiveClassId} onValueChange={setGraceLiveClassId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select session" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {liveClasses.map((lc) => (
+                          <SelectItem key={lc._id} value={lc._id}>
+                            {lc.topic} — {formatDate(lc.startTime, true)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="flex items-center justify-between gap-3 border rounded-md p-3">
                     <div>
                       <Label className="text-sm">Target specific students</Label>
@@ -424,7 +441,10 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
                     />
                   </div>
                   <DialogFooter>
-                    <Button type="submit" disabled={granting || (graceTargetSelected && graceStudentIds.length === 0)}>
+                    <Button
+                      type="submit"
+                      disabled={granting || !graceLiveClassId || (graceTargetSelected && graceStudentIds.length === 0)}
+                    >
                       {graceTargetSelected ? `Grant to ${graceStudentIds.length} selected student${graceStudentIds.length === 1 ? "" : "s"}` : "Grant to whole batch"}
                     </Button>
                   </DialogFooter>
