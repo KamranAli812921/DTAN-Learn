@@ -48,6 +48,14 @@ export async function getZoomAccessToken(): Promise<string> {
   return cachedToken.token;
 }
 
+export class ZoomApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function zoomFetch(path: string, init?: RequestInit) {
   const token = await getZoomAccessToken();
   const res = await fetch(`${ZOOM_API_BASE}${path}`, {
@@ -59,7 +67,7 @@ async function zoomFetch(path: string, init?: RequestInit) {
     },
   });
   if (!res.ok) {
-    throw new Error(`Zoom API error (${path}): ${res.status} ${await res.text()}`);
+    throw new ZoomApiError(res.status, `Zoom API error (${path}): ${res.status} ${await res.text()}`);
   }
   return res.json();
 }
@@ -109,13 +117,25 @@ export interface ZoomParticipant {
 export async function getMeetingParticipants(meetingId: string): Promise<ZoomParticipant[]> {
   const participants: ZoomParticipant[] = [];
   let nextPageToken = "";
-  do {
-    const query = new URLSearchParams({ page_size: "300" });
-    if (nextPageToken) query.set("next_page_token", nextPageToken);
-    const data = await zoomFetch(`/report/meetings/${meetingId}/participants?${query.toString()}`);
-    participants.push(...(data.participants || []));
-    nextPageToken = data.next_page_token || "";
-  } while (nextPageToken);
+  try {
+    do {
+      const query = new URLSearchParams({ page_size: "300" });
+      if (nextPageToken) query.set("next_page_token", nextPageToken);
+      const data = await zoomFetch(`/report/meetings/${meetingId}/participants?${query.toString()}`);
+      participants.push(...(data.participants || []));
+      nextPageToken = data.next_page_token || "";
+    } while (nextPageToken);
+  } catch (err) {
+    // Zoom has no participants report for a meeting that was scheduled but
+    // never actually started (nobody, including the host, joined) — it
+    // returns 404 "Meeting does not exist" for the report endpoint in that
+    // case. Treat that the same as zero participants instead of failing the
+    // whole sync, so markAbsentees still runs and marks everyone absent.
+    if (err instanceof ZoomApiError && err.status === 404) {
+      return [];
+    }
+    throw err;
+  }
   return participants;
 }
 
