@@ -134,6 +134,20 @@ export async function getMeetingParticipants(meetingId: string): Promise<ZoomPar
     if (err instanceof ZoomApiError && err.status === 404) {
       return [];
     }
+    // The participants report is part of Zoom's Reports feature, which Basic
+    // (free) accounts don't have access to at all — Zoom returns a 400 here,
+    // not a 404, so it can't be treated as "zero participants" (that would
+    // wrongly mark everyone absent even though the meeting may have had real
+    // attendees). Surface it as an actionable message instead of Zoom's raw
+    // "Only available for Paid or ZMP account" text: the webhook keeps
+    // recording attendance live regardless of plan, so this only breaks the
+    // manual backfill button, not attendance tracking itself.
+    if (err instanceof ZoomApiError && err.status === 400 && /Paid or ZMP account/i.test(err.message)) {
+      throw new ZoomApiError(
+        402,
+        "Manual sync isn't available on this Zoom account's plan (the meeting participants report requires a paid Zoom plan)"
+      );
+    }
     throw err;
   }
   return participants;

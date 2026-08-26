@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Video, ExternalLink, Gift, History, ListChecks } from "lucide-react";
+import { RefreshCw, Video, ExternalLink, Gift, History, ListChecks, UserSearch, Check, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -56,6 +56,13 @@ interface AuditLogEntry {
   reason: string;
   createdAt: string;
 }
+interface UnmatchedEntry {
+  _id: string;
+  zoomEmail?: string;
+  zoomName?: string;
+  joinTime: string;
+  leaveTime?: string;
+}
 interface LiveClass {
   _id: string;
   topic: string;
@@ -87,6 +94,10 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
   const [liveClasses, setLiveClasses] = useState<LiveClass[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+
+  const [unmatched, setUnmatched] = useState<UnmatchedEntry[]>([]);
+  const [assignSelections, setAssignSelections] = useState<Record<string, string>>({});
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({ topic: "", startTime: "", durationMinutes: 60, joinWindowMinutes: 10 });
@@ -125,6 +136,17 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
   // A "session" is one scheduled live class. Attendance is viewed and
   // marked per session, not per calendar date — clicking a session in the
   // "Scheduled live classes" list below loads that class's roster.
+  function loadUnmatched(liveClassId: string) {
+    if (!liveClassId) {
+      setUnmatched([]);
+      return;
+    }
+    api
+      .get<UnmatchedEntry[]>(`/api/attendance/unmatched?liveClassId=${liveClassId}`)
+      .then(setUnmatched)
+      .catch(() => setUnmatched([]));
+  }
+
   function loadBatchData() {
     if (!selectedBatch) return;
     setLoading(true);
@@ -138,6 +160,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
         const stillValid = lc.some((c) => c._id === selectedLiveClassId);
         const target = stillValid ? selectedLiveClassId : lc[0]?._id ?? "";
         setSelectedLiveClassId(target);
+        loadUnmatched(target);
         if (target) {
           return api.get<AttendanceRecord[]>(`/api/attendance?liveClassId=${target}`).then(setRecords);
         }
@@ -152,6 +175,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
     if (liveClassId === selectedLiveClassId) return;
     setSelectedLiveClassId(liveClassId);
     setLoading(true);
+    loadUnmatched(liveClassId);
     api
       .get<AttendanceRecord[]>(`/api/attendance?liveClassId=${liveClassId}`)
       .then(setRecords)
@@ -234,13 +258,59 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
       });
       toast({
         title: `Synced attendance: ${res.matched} matched, ${res.unmatched} unmatched.`,
-        description: res.absentMarked > 0 ? `${res.absentMarked} student(s) who never joined were marked absent.` : undefined,
+        description: res.unmatched > 0
+          ? "Unmatched participants are listed below — assign them to a student or ignore them."
+          : res.absentMarked > 0
+            ? `${res.absentMarked} student(s) who never joined were marked absent.`
+            : undefined,
       });
       loadBatchData();
     } catch (err) {
       toast({ variant: "destructive", title: err instanceof Error ? err.message : "Sync failed." });
     } finally {
       setSyncingId(null);
+    }
+  }
+
+  async function handleAssignUnmatched(entry: UnmatchedEntry) {
+    const studentId = assignSelections[entry._id];
+    if (!studentId) {
+      toast({ variant: "destructive", title: "Select a student to assign this to first." });
+      return;
+    }
+    setResolvingId(entry._id);
+    try {
+      await api.patch(`/api/attendance/unmatched/${entry._id}`, {
+        action: "resolve",
+        student: studentId,
+        rememberEmail: true,
+      });
+      toast({ title: "Assigned.", description: "That student's attendance has been updated, and future syncs from this email will match automatically." });
+      setUnmatched((prev) => prev.filter((u) => u._id !== entry._id));
+      setAssignSelections((prev) => {
+        const next = { ...prev };
+        delete next[entry._id];
+        return next;
+      });
+      if (selectedLiveClassId) {
+        api.get<AttendanceRecord[]>(`/api/attendance?liveClassId=${selectedLiveClassId}`).then(setRecords);
+      }
+    } catch (err) {
+      toast({ variant: "destructive", title: err instanceof Error ? err.message : "Failed to assign." });
+    } finally {
+      setResolvingId(null);
+    }
+  }
+
+  async function handleIgnoreUnmatched(entry: UnmatchedEntry) {
+    setResolvingId(entry._id);
+    try {
+      await api.patch(`/api/attendance/unmatched/${entry._id}`, { action: "ignore" });
+      setUnmatched((prev) => prev.filter((u) => u._id !== entry._id));
+    } catch (err) {
+      toast({ variant: "destructive", title: err instanceof Error ? err.message : "Failed to ignore." });
+    } finally {
+      setResolvingId(null);
     }
   }
 
@@ -595,6 +665,63 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+      )}
+
+      {unmatched.length > 0 && (
+        <Card className="mb-6 border-amber-500/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserSearch className="h-4 w-4" /> Unmatched Zoom participants ({unmatched.length})
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              These joined the Zoom session but their email doesn&apos;t match any student account — ask the student which
+              email they joined with, then assign them below. They currently count as absent.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {unmatched.map((entry) => (
+              <div key={entry._id} className="flex flex-col sm:flex-row sm:items-center gap-3 border rounded-md p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm break-words">{entry.zoomName || "Unknown name"}</p>
+                  <p className="text-xs text-muted-foreground break-words">{entry.zoomEmail || "No email reported"}</p>
+                  <p className="text-xs text-muted-foreground">Joined {formatDate(entry.joinTime, true)}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Select
+                    value={assignSelections[entry._id] ?? ""}
+                    onValueChange={(v) => setAssignSelections((prev) => ({ ...prev, [entry._id]: v }))}
+                  >
+                    <SelectTrigger className="w-full sm:w-56">
+                      <SelectValue placeholder="Assign to student…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {students.map((s) => (
+                        <SelectItem key={s._id} value={s._id}>
+                          {s.fullName} ({s.studentId})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    onClick={() => handleAssignUnmatched(entry)}
+                    disabled={resolvingId === entry._id || !assignSelections[entry._id]}
+                  >
+                    <Check className="h-3.5 w-3.5" /> Assign
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleIgnoreUnmatched(entry)}
+                    disabled={resolvingId === entry._id}
+                  >
+                    <X className="h-3.5 w-3.5" /> Ignore
+                  </Button>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}

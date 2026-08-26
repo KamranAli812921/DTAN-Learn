@@ -4,7 +4,7 @@ import { LiveClass } from "@/models";
 import { requireRole, ApiError, withErrorHandling } from "@/lib/api-helpers";
 import { getTeacherProfileId } from "@/lib/permissions";
 import { getMeetingParticipants } from "@/lib/zoom";
-import { mergeAttendanceSegment, findStudentByEmail, markAbsentees } from "@/lib/attendance-sync";
+import { mergeAttendanceSegment, findStudentByEmail, markAbsentees, recordUnmatchedParticipant } from "@/lib/attendance-sync";
 
 /**
  * Polling fallback (spec 6.3): after a class ends, backfill anything the
@@ -35,6 +35,16 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   for (const p of participants) {
     const student = await findStudentByEmail(p.user_email);
     if (!student) {
+      await recordUnmatchedParticipant({
+        liveClassId: liveClass._id.toString(),
+        batchId: liveClass.batch.toString(),
+        zoomMeetingId: liveClass.zoomMeetingId,
+        zoomEmail: p.user_email,
+        zoomName: p.name,
+        joinTime: new Date(p.join_time),
+        leaveTime: new Date(p.leave_time),
+        zoomParticipantId: p.id,
+      });
       unmatched += 1;
       continue;
     }

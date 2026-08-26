@@ -154,11 +154,69 @@ export async function markAbsentees(liveClassId: string): Promise<number> {
   return count;
 }
 
-/** Resolve a Zoom participant's student by email (case-insensitive). */
+/**
+ * Resolve a Zoom participant's student by email (case-insensitive). Checks
+ * Student.zoomEmail first — set when a teacher/admin manually resolves a
+ * previously-unmatched participant (see recordUnmatchedParticipant below) —
+ * before falling back to the account's login email.
+ */
 export async function findStudentByEmail(email: string | undefined) {
   if (!email) return null;
+  const lower = email.toLowerCase();
+
+  const byZoomEmail = await Student.findOne({ zoomEmail: lower });
+  if (byZoomEmail) return byZoomEmail;
+
   const { User } = await import("@/models");
-  const user = await User.findOne({ email: email.toLowerCase(), role: "student" });
+  const user = await User.findOne({ email: lower, role: "student" });
   if (!user) return null;
   return Student.findOne({ user: user._id });
+}
+
+/**
+ * Record (or update) a Zoom participant segment that couldn't be matched to
+ * any student by email, so it shows up in the "Unmatched participants"
+ * review table instead of silently never being recorded. Dedupes by
+ * zoomParticipantId the same way mergeAttendanceSegment does, so the webhook
+ * firing twice or the polling fallback re-reporting the same segment updates
+ * the existing pending entry rather than creating a duplicate. Once an entry
+ * has been resolved or ignored by a teacher/admin, later events for that
+ * same segment are left alone.
+ */
+export async function recordUnmatchedParticipant(params: {
+  liveClassId: string;
+  batchId: string;
+  zoomMeetingId: string;
+  zoomEmail?: string;
+  zoomName?: string;
+  joinTime: Date;
+  leaveTime: Date | null;
+  zoomParticipantId?: string;
+}): Promise<void> {
+  const { UnmatchedZoomParticipant } = await import("@/models");
+
+  const existing = params.zoomParticipantId
+    ? await UnmatchedZoomParticipant.findOne({
+        liveClass: params.liveClassId,
+        zoomParticipantId: params.zoomParticipantId,
+      })
+    : null;
+
+  if (existing) {
+    if (existing.status !== "pending") return;
+    if (params.leaveTime) existing.leaveTime = params.leaveTime;
+    await existing.save();
+    return;
+  }
+
+  await UnmatchedZoomParticipant.create({
+    liveClass: params.liveClassId,
+    batch: params.batchId,
+    zoomMeetingId: params.zoomMeetingId,
+    zoomParticipantId: params.zoomParticipantId,
+    zoomEmail: params.zoomEmail,
+    zoomName: params.zoomName,
+    joinTime: params.joinTime,
+    leaveTime: params.leaveTime ?? undefined,
+  });
 }

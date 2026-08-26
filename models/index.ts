@@ -10,6 +10,7 @@ import Enrollment from "./Enrollment";
 import LiveClass from "./LiveClass";
 import Attendance from "./Attendance";
 import AttendanceAuditLog from "./AttendanceAuditLog";
+import UnmatchedZoomParticipant from "./UnmatchedZoomParticipant";
 import PasswordResetToken from "./PasswordResetToken";
 import RateLimitEvent from "./RateLimitEvent";
 import Assignment from "./Assignment";
@@ -28,6 +29,7 @@ export {
   LiveClass,
   Attendance,
   AttendanceAuditLog,
+  UnmatchedZoomParticipant,
   PasswordResetToken,
   RateLimitEvent,
   Assignment,

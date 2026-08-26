@@ -21,6 +21,17 @@ export const graceAttendanceSchema = z.object({
   students: z.array(objectId).min(1).optional(),
 });
 
+export const resolveUnmatchedParticipantSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("resolve"),
+    student: objectId,
+    rememberEmail: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal("ignore"),
+  }),
+]);
+
 export const liveClassSchema = z.object({
   course: objectId,
   batch: objectId,

@@ -6,6 +6,10 @@ export interface IStudent extends Document {
   fullName: string;
   phone?: string;
   avatarUrl?: string;
+  /** Email the student actually joins Zoom with, when it differs from their
+   *  login email — set when a teacher/admin resolves an unmatched Zoom
+   *  participant so future syncs match automatically. */
+  zoomEmail?: string;
   course: Types.ObjectId;
   batch: Types.ObjectId;
   enrollmentDate: Date;
@@ -20,6 +24,7 @@ const StudentSchema = new Schema<IStudent>(
     fullName: { type: String, required: true, trim: true },
     phone: { type: String, trim: true },
     avatarUrl: { type: String },
+    zoomEmail: { type: String, trim: true, lowercase: true },
     course: { type: Schema.Types.ObjectId, ref: "Course", required: true },
     batch: { type: Schema.Types.ObjectId, ref: "Batch", required: true },
     enrollmentDate: { type: Date, default: Date.now },
@@ -29,6 +34,7 @@ const StudentSchema = new Schema<IStudent>(
 
 StudentSchema.index({ batch: 1 });
 StudentSchema.index({ course: 1 });
+StudentSchema.index({ zoomEmail: 1 }, { sparse: true, unique: true });
 
 const Student: Model<IStudent> = models.Student || model<IStudent>("Student", StudentSchema);
 export default Student;

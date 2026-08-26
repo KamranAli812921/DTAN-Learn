@@ -3,7 +3,7 @@ import crypto from "crypto";
 import connectDB from "@/lib/db";
 import { LiveClass } from "@/models";
 import { verifyZoomSignature } from "@/lib/zoom";
-import { mergeAttendanceSegment, findStudentByEmail } from "@/lib/attendance-sync";
+import { mergeAttendanceSegment, findStudentByEmail, recordUnmatchedParticipant } from "@/lib/attendance-sync";
 
 /**
  * Zoom webhook receiver for meeting.participant_joined / participant_left.
@@ -53,6 +53,16 @@ export async function POST(req: NextRequest) {
 
   const student = await findStudentByEmail(participant.email || participant.user_email);
   if (!student) {
+    await recordUnmatchedParticipant({
+      liveClassId: liveClass._id.toString(),
+      batchId: liveClass.batch.toString(),
+      zoomMeetingId: meetingId,
+      zoomEmail: participant.email || participant.user_email,
+      zoomName: participant.user_name,
+      joinTime: new Date(participant.join_time),
+      leaveTime: eventType === "meeting.participant_left" ? new Date(participant.leave_time) : null,
+      zoomParticipantId: participant.id,
+    });
     return NextResponse.json({ received: true, note: "No matching student for participant email." });
   }
 
