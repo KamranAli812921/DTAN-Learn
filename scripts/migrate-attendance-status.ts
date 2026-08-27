@@ -31,7 +31,10 @@ async function migrate() {
   await mongoose.connect(uri, { dbName: "DTAN-Learn" });
 
   const db = mongoose.connection.db!;
-  const attendance = db.collection("attendance");
+  // Mongoose pluralizes the "Attendance" / "AttendanceAuditLog" model names
+  // into these collection names (no explicit `collection` option on either
+  // schema), so the raw driver calls below must use the pluralized forms.
+  const attendance = db.collection("attendances");
   const auditLogs = db.collection("attendanceauditlogs");
 
   const lateResult = await attendance.updateMany(
@@ -42,9 +45,17 @@ async function migrate() {
 
   const excusedResult = await attendance.updateMany(
     { status: "excused" },
-    { $set: { status: "present" } }
+    { $set: { status: "present", isLate: false } }
   );
   console.log(`"excused" -> "present": ${excusedResult.modifiedCount} record(s) updated.`);
+
+  // Backfill the new isLate flag on every record that predates it so the
+  // field is always present (present/absent records were never late).
+  const backfillResult = await attendance.updateMany(
+    { isLate: { $exists: false } },
+    { $set: { isLate: false } }
+  );
+  console.log(`isLate backfilled to false on ${backfillResult.modifiedCount} older record(s).`);
 
   const auditLateResult = await auditLogs.updateMany({ previousStatus: "late" }, { $set: { previousStatus: "present" } });
   const auditLateResult2 = await auditLogs.updateMany({ newStatus: "late" }, { $set: { newStatus: "present" } });
