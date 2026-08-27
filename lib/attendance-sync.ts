@@ -13,24 +13,58 @@ function startOfDay(d: Date): Date {
 }
 
 /**
+ * Minutes of overlap between a join/leave segment and the class's own time
+ * window [startTime, startTime + durationMinutes]. Time spent connected
+ * before the class starts or after it ends doesn't count towards attendance,
+ * and this also guarantees a single segment can never exceed the class
+ * length. An open segment (no leaveTime yet) counts as 0 — its duration is
+ * only known once the matching `participant_left` / polling report lands.
+ */
+export function classWindowMinutes(
+  joinTime: Date,
+  leaveTime: Date | null | undefined,
+  liveClass: { startTime: Date; durationMinutes: number }
+): number {
+  if (!leaveTime) return 0;
+  const classStart = liveClass.startTime.getTime();
+  const classEnd = classStart + liveClass.durationMinutes * 60_000;
+  const start = Math.max(joinTime.getTime(), classStart);
+  const end = Math.min(leaveTime.getTime(), classEnd);
+  return Math.max(0, Math.round((end - start) / 60_000));
+}
+
+/**
+ * Total minutes of the class a student attended: the sum of every segment's
+ * overlap with the class window, capped at the class length (overlapping
+ * Zoom segments can otherwise push the sum slightly over).
+ */
+export function totalClassMinutes(
+  sessions: IAttendanceSession[],
+  liveClass: { startTime: Date; durationMinutes: number }
+): number {
+  const sum = sessions.reduce((acc, s) => acc + classWindowMinutes(s.joinTime, s.leaveTime, liveClass), 0);
+  return Math.min(sum, liveClass.durationMinutes);
+}
+
+/**
  * Recompute status from sessions + the live class definition. Only two
  * statuses exist:
- *  - absent  : no sessions logged, or total duration across all sessions
- *              falls short of 70% of the class duration
- *  - present : total duration across all sessions >= 70% of class duration
+ *  - absent  : no sessions logged, or class time attended falls short of
+ *              70% of the class duration
+ *  - present : class time attended >= 70% of class duration
  * "Late" is not a status — see isLateArrival below, which surfaces it as a
  * note alongside whichever status this returns.
  */
 export function computeAttendanceStatus(
   sessions: IAttendanceSession[],
-  liveClass: { durationMinutes: number }
+  liveClass: { startTime: Date; durationMinutes: number }
 ): AttendanceStatus {
   if (!sessions.length) return "absent";
 
-  const totalDurationMinutes = sessions.reduce((sum, s) => sum + s.durationMinutes, 0);
+  const attended = totalClassMinutes(sessions, liveClass);
   const threshold = 0.7 * liveClass.durationMinutes;
 
-  return totalDurationMinutes >= threshold ? "present" : "absent";
+  return attended >= threshold ? "present" : "absent";
 }
 
 /**
@@ -72,14 +106,16 @@ export async function mergeAttendanceSegment(params: {
   if (!liveClass) return;
 
   const date = startOfDay(liveClass.startTime);
+  // Only the portion of this segment that falls inside the class window counts.
   const durationMinutes = params.leaveTime
-    ? Math.max(0, Math.round((params.leaveTime.getTime() - params.joinTime.getTime()) / 60000))
+    ? classWindowMinutes(params.joinTime, params.leaveTime, liveClass)
     : 0;
 
+  // Keyed by the live class, not the calendar day: a batch can hold more than
+  // one class per day and each gets its own record.
   let attendance = await Attendance.findOne({
     student: params.studentId,
-    batch: params.batchId,
-    date,
+    liveClass: liveClass._id,
   });
 
   if (!attendance) {
@@ -118,7 +154,7 @@ export async function mergeAttendanceSegment(params: {
     });
   }
 
-  attendance.totalDurationMinutes = attendance.sessions.reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
+  attendance.totalDurationMinutes = totalClassMinutes(attendance.sessions, liveClass);
   attendance.status = computeAttendanceStatus(attendance.sessions, liveClass);
   attendance.isLate = isLateArrival(attendance.sessions, liveClass);
   attendance.liveClass = liveClass._id;
@@ -130,7 +166,7 @@ export async function mergeAttendanceSegment(params: {
 
 /**
  * Mark every student in the live class's batch who still has no Attendance
- * record for that session's date as "absent" — covers students who never
+ * record for this live class as "absent" — covers students who never
  * joined the Zoom meeting at all (including the degenerate case where no one
  * joined). Called once the class is finalized (see POST
  * /api/attendance/zoom-sync), after every actual participant segment has
@@ -146,7 +182,7 @@ export async function markAbsentees(liveClassId: string): Promise<number> {
 
   let count = 0;
   for (const student of students) {
-    const existing = await Attendance.findOne({ student: student._id, batch: liveClass.batch, date });
+    const existing = await Attendance.findOne({ student: student._id, liveClass: liveClass._id });
     if (existing) continue;
 
     await Attendance.create({

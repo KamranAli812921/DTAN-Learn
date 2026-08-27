@@ -337,6 +337,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
         "/api/attendance/grace",
         {
           batch: selectedBatch,
+          liveClass: graceLiveClassId || undefined,
           date: graceDateStr,
           reason: graceReason,
           students: graceTargetSelected ? graceStudentIds : undefined,
@@ -399,6 +400,7 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
         await api.post("/api/attendance", {
           student: markTarget.student._id,
           batch: selectedBatch,
+          liveClass: selectedLiveClassId || undefined,
           date: sessionDateStr,
           status: markStatus,
           remarks: markReason || undefined,

@@ -19,20 +19,16 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   const filter: Record<string, unknown> = {};
   if (studentId) filter.student = studentId;
 
-  // A "session" is one live class occurrence — its attendance is every
-  // Attendance record for that batch on that class's (UTC) day. Mirrors the
-  // day-boundary lookup mergeAttendanceSegment/markAbsentees use to
-  // create/find those same records, so this always matches what synced.
-  let sessionFilter: { batch: string; date: { $gte: Date; $lt: Date } } | null = null;
+  // A "session" is one live class occurrence. Attendance is now keyed by the
+  // live class it belongs to (a batch can run several classes on the same
+  // day), so scope straight to that class rather than to its calendar day.
+  let sessionBatch: string | null = null;
   if (liveClassId) {
     if (!isValidObjectId(liveClassId)) throw new ApiError(400, "Invalid live class id.");
-    const liveClass = await LiveClass.findById(liveClassId).select("batch startTime");
+    const liveClass = await LiveClass.findById(liveClassId).select("batch");
     if (!liveClass) throw new ApiError(404, "Live class not found.");
-    const day = new Date(liveClass.startTime);
-    day.setUTCHours(0, 0, 0, 0);
-    const nextDay = new Date(day);
-    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-    sessionFilter = { batch: liveClass.batch.toString(), date: { $gte: day, $lt: nextDay } };
+    sessionBatch = liveClass.batch.toString();
+    filter.liveClass = liveClassId;
   } else if (from || to) {
     filter.date = {
       ...(from ? { $gte: new Date(from) } : {}),
@@ -42,27 +38,22 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
 
   if (session.user.role === "teacher") {
     const teacherId = await getTeacherProfileId(session);
-    if (sessionFilter) {
-      await assertTeacherOwnsBatch(teacherId, sessionFilter.batch);
-      filter.batch = sessionFilter.batch;
-      filter.date = sessionFilter.date;
+    if (sessionBatch) {
+      await assertTeacherOwnsBatch(teacherId, sessionBatch);
     } else {
       const batchIds = await getTeacherBatchIds(teacherId);
       filter.batch = batchId ? batchId : { $in: batchIds };
     }
   } else if (session.user.role === "student") {
     filter.student = await getStudentProfileId(session);
-    if (sessionFilter) filter.date = sessionFilter.date;
-  } else if (sessionFilter) {
-    filter.batch = sessionFilter.batch;
-    filter.date = sessionFilter.date;
-  } else if (batchId) {
+  } else if (!sessionBatch && batchId) {
     filter.batch = batchId;
   }
 
   const records = await Attendance.find(filter)
     .populate("student", "fullName studentId")
     .populate("batch", "batchName")
+    .populate("liveClass", "topic startTime durationMinutes")
     .populate("markedBy", "username")
     .sort({ date: -1 });
 
@@ -80,16 +71,35 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     await assertTeacherOwnsBatch(teacherId, data.batch);
   }
 
+  // When a specific live class is targeted (the attendance manager always has
+  // one selected), the record is keyed to that class. Its date comes from the
+  // class so it lines up with any Zoom-synced record for the same class.
+  let liveClassId: string | undefined;
+  let date = new Date(data.date);
+  if (data.liveClass) {
+    const liveClass = await LiveClass.findById(data.liveClass).select("batch startTime");
+    if (!liveClass) throw new ApiError(404, "Live class not found.");
+    if (liveClass.batch.toString() !== data.batch) throw new ApiError(400, "That live class is not in this batch.");
+    liveClassId = data.liveClass;
+    date = new Date(liveClass.startTime);
+  }
   // UTC day boundary — dates are parsed/queried as UTC elsewhere (see GET
   // above and lib/attendance-sync.ts), so normalize with setUTCHours, not
   // the server's local timezone (setHours), or this silently lands on the
   // wrong day on any non-UTC server.
-  const date = new Date(data.date);
   date.setUTCHours(0, 0, 0, 0);
+
+  const existing = await Attendance.findOne({
+    student: data.student,
+    date,
+    ...(liveClassId ? { liveClass: liveClassId } : { liveClass: null }),
+  });
+  if (existing) throw new ApiError(409, "This student already has an attendance record for this session — edit that one instead.");
 
   const attendance = await Attendance.create({
     student: data.student,
     batch: data.batch,
+    liveClass: liveClassId,
     date,
     status: data.status,
     markedBy: session.user.id,

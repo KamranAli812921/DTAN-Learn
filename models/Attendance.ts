@@ -61,8 +61,15 @@ const AttendanceSchema = new Schema<IAttendance>(
   { timestamps: true }
 );
 
-// Prevent duplicate attendance records for the same student/batch/date.
-AttendanceSchema.index({ student: 1, batch: 1, date: 1 }, { unique: true });
+// One attendance record per student per live class occurrence. A batch can
+// run several live classes on the same calendar day, so the record is keyed
+// by the class it belongs to — not just the date. Records with no live class
+// (manual marks / grace attendance on a day with nothing scheduled) index
+// liveClass as null, which keeps the old "one per student per day" guarantee
+// for that case.
+AttendanceSchema.index({ student: 1, liveClass: 1, date: 1 }, { unique: true });
+// Supports the batch+day lookups the attendance API and sync still do.
+AttendanceSchema.index({ batch: 1, date: 1 });
 AttendanceSchema.index({ zoomMeetingId: 1 });
 
 const Attendance: Model<IAttendance> = models.Attendance || model<IAttendance>("Attendance", AttendanceSchema);

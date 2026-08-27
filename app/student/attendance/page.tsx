@@ -28,6 +28,7 @@ interface AttendanceRecord {
   totalDurationMinutes: number;
   sessions: AttendanceSession[];
   remarks?: string;
+  liveClass?: { _id: string; topic: string; durationMinutes: number };
 }
 interface Batch {
   _id: string;
@@ -103,7 +104,14 @@ export default function StudentAttendancePage() {
                     <TableBody>
                       {records.map((r) => (
                         <TableRow key={r._id} className="align-top">
-                          <TableCell className="font-medium">{formatDate(r.date)}</TableCell>
+                          <TableCell className="font-medium">
+                            {formatDate(r.date)}
+                            {r.liveClass && (
+                              <span className="block text-xs font-normal text-muted-foreground">
+                                {r.liveClass.topic} · {r.liveClass.durationMinutes} min
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <StatusBadge status={r.status} />
@@ -146,6 +154,11 @@ export default function StudentAttendancePage() {
                     <MobileCard key={r._id} className="space-y-3">
                       <MobileCardHeader>
                         <p className="font-medium">{formatDate(r.date)}</p>
+                        {r.liveClass && (
+                          <p className="text-xs text-muted-foreground">
+                            {r.liveClass.topic} · {r.liveClass.durationMinutes} min
+                          </p>
+                        )}
                       </MobileCardHeader>
                       <MobileField label="Status">
                         <div className="flex items-center gap-1.5 flex-wrap">

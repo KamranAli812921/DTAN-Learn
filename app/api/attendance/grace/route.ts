@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/db";
-import { Attendance, AttendanceAuditLog, Student } from "@/models";
+import { Attendance, AttendanceAuditLog, LiveClass, Student } from "@/models";
 import { graceAttendanceSchema } from "@/lib/validators/attendance";
-import { requireRole, withErrorHandling } from "@/lib/api-helpers";
+import { requireRole, ApiError, withErrorHandling } from "@/lib/api-helpers";
 import { getTeacherProfileId, assertTeacherOwnsBatch } from "@/lib/permissions";
 
 /**
@@ -29,8 +29,19 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     await assertTeacherOwnsBatch(teacherId, data.batch);
   }
 
+  // When a live class is targeted, grace attendance is keyed to that class
+  // (a batch can hold more than one class per day); its date comes from the
+  // class so it lines up with any Zoom-synced record for the same class.
+  let liveClassId: string | undefined;
+  let date = new Date(data.date);
+  if (data.liveClass) {
+    const liveClass = await LiveClass.findById(data.liveClass).select("batch startTime");
+    if (!liveClass) throw new ApiError(404, "Live class not found.");
+    if (liveClass.batch.toString() !== data.batch) throw new ApiError(400, "That live class is not in this batch.");
+    liveClassId = data.liveClass;
+    date = new Date(liveClass.startTime);
+  }
   // UTC day boundary — see the same normalization in app/api/attendance/route.ts.
-  const date = new Date(data.date);
   date.setUTCHours(0, 0, 0, 0);
 
   const remarks = `Grace attendance: ${data.reason}`;
@@ -45,12 +56,17 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   let alreadyPresent = 0;
 
   for (const student of students) {
-    const existing = await Attendance.findOne({ student: student._id, batch: data.batch, date });
+    const existing = await Attendance.findOne({
+      student: student._id,
+      date,
+      ...(liveClassId ? { liveClass: liveClassId } : { liveClass: null }),
+    });
 
     if (!existing) {
       const attendance = await Attendance.create({
         student: student._id,
         batch: data.batch,
+        liveClass: liveClassId,
         date,
         status: "present",
         markedBy: session.user.id,
