@@ -10,7 +10,8 @@
     "lint": "next lint",
     "seed": "tsx scripts/seed.ts",
     "migrate:attendance-status": "tsx scripts/migrate-attendance-status.ts",
-    "migrate:attendance-per-class": "tsx scripts/migrate-attendance-per-class.ts"
+    "migrate:attendance-per-class": "tsx scripts/migrate-attendance-per-class.ts",
+    "migrate:material-target": "tsx scripts/migrate-material-target.ts"
   },
   "dependencies": {
     "next": "14.2.35",

@@ -28,13 +28,19 @@ export const markSchema = z.object({
   feedback: z.string().max(2000).optional(),
 });
 
-export const materialSchema = z.object({
-  course: objectId,
-  batch: objectId,
-  title: z.string().min(2).max(150),
-  description: z.string().max(2000).optional(),
-  fileUrl: z.string().url(),
-});
+export const materialSchema = z
+  .object({
+    course: objectId,
+    targetType: z.enum(["course", "batch"]).default("batch"),
+    batch: objectId.optional(),
+    title: z.string().min(2).max(150),
+    description: z.string().max(2000).optional(),
+    fileUrl: z.string().url(),
+  })
+  .refine((d) => d.targetType !== "batch" || !!d.batch, {
+    message: "Batch is required when sharing with a single batch.",
+    path: ["batch"],
+  });
 
 export const announcementSchema = z
   .object({

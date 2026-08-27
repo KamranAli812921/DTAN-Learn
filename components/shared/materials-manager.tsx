@@ -35,11 +35,12 @@ interface Material {
   description?: string;
   fileUrl: string;
   course: Course;
-  batch: { _id: string; batchName: string };
+  targetType: "course" | "batch";
+  batch?: { _id: string; batchName: string } | null;
   createdAt: string;
 }
 
-const emptyForm = { title: "", description: "", course: "", batch: "", fileUrl: "" };
+const emptyForm = { title: "", description: "", course: "", targetType: "batch", batch: "", fileUrl: "" };
 
 export function MaterialsManager({ role }: { role: "admin" | "teacher" | "student" }) {
   const { toast } = useToast();
@@ -75,7 +76,10 @@ export function MaterialsManager({ role }: { role: "admin" | "teacher" | "studen
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post("/api/materials", form);
+      await api.post("/api/materials", {
+        ...form,
+        batch: form.targetType === "batch" ? form.batch : undefined,
+      });
       toast({ title: "Material uploaded." });
       setOpen(false);
       setForm(emptyForm);
@@ -100,6 +104,9 @@ export function MaterialsManager({ role }: { role: "admin" | "teacher" | "studen
   }
 
   const filteredBatches = form.course ? batches.filter((b) => b.course?._id === form.course) : batches;
+
+  const scopeLabel = (m: Material) =>
+    m.targetType === "course" ? `All ${m.course?.courseCode ?? ""} batches`.trim() : m.batch?.batchName ?? "—";
 
   return (
     <div>
@@ -144,6 +151,23 @@ export function MaterialsManager({ role }: { role: "admin" | "teacher" | "studen
                       </Select>
                     </div>
                     <div className="space-y-2">
+                      <Label>Share with</Label>
+                      <Select
+                        value={form.targetType}
+                        onValueChange={(v) => setForm({ ...form, targetType: v, batch: v === "course" ? "" : form.batch })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="batch">A single batch</SelectItem>
+                          <SelectItem value="course">Whole course (all batches)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {form.targetType === "batch" && (
+                    <div className="space-y-2">
                       <Label>Batch</Label>
                       <Select value={form.batch} onValueChange={(v) => setForm({ ...form, batch: v })}>
                         <SelectTrigger>
@@ -158,10 +182,13 @@ export function MaterialsManager({ role }: { role: "admin" | "teacher" | "studen
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
+                  )}
                   <FileUploadField label="File" folder="materials" value={form.fileUrl} onChange={(url) => setForm({ ...form, fileUrl: url })} required />
                   <DialogFooter>
-                    <Button type="submit" disabled={saving || !form.course || !form.batch || !form.fileUrl}>
+                    <Button
+                      type="submit"
+                      disabled={saving || !form.course || !form.fileUrl || (form.targetType === "batch" && !form.batch)}
+                    >
                       Upload
                     </Button>
                   </DialogFooter>
@@ -189,7 +216,7 @@ export function MaterialsManager({ role }: { role: "admin" | "teacher" | "studen
                   <TableHeader>
                     <TableRow>
                       <TableHead>Title</TableHead>
-                      <TableHead>Batch</TableHead>
+                      <TableHead>Shared with</TableHead>
                       <TableHead>Uploaded</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -201,7 +228,7 @@ export function MaterialsManager({ role }: { role: "admin" | "teacher" | "studen
                           {m.title}
                           {m.description && <div className="text-xs text-muted-foreground line-clamp-1">{m.description}</div>}
                         </TableCell>
-                        <TableCell>{m.batch?.batchName}</TableCell>
+                        <TableCell>{scopeLabel(m)}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{formatDate(m.createdAt)}</TableCell>
                         <TableCell className="text-right space-x-1">
                           <a href={m.fileUrl} target="_blank" rel="noreferrer">
@@ -243,7 +270,7 @@ export function MaterialsManager({ role }: { role: "admin" | "teacher" | "studen
                       <p className="font-medium">{m.title}</p>
                       {m.description && <p className="text-xs text-muted-foreground line-clamp-1">{m.description}</p>}
                     </MobileCardHeader>
-                    <MobileField label="Batch">{m.batch?.batchName}</MobileField>
+                    <MobileField label="Shared with">{scopeLabel(m)}</MobileField>
                     <MobileField label="Uploaded">{formatDate(m.createdAt)}</MobileField>
                   </MobileCard>
                 ))}

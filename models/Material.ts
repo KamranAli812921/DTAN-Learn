@@ -1,8 +1,13 @@
 import { Schema, model, models, type Document, type Model, type Types } from "mongoose";
 
+export type MaterialTarget = "course" | "batch";
+
 export interface IMaterial extends Document {
   course: Types.ObjectId;
-  batch: Types.ObjectId;
+  /** "batch" — visible to one batch (`batch` set). "course" — visible to every
+   *  batch of `course` (`batch` unset). */
+  targetType: MaterialTarget;
+  batch?: Types.ObjectId;
   uploadedBy: Types.ObjectId;
   title: string;
   description?: string;
@@ -14,7 +19,14 @@ export interface IMaterial extends Document {
 const MaterialSchema = new Schema<IMaterial>(
   {
     course: { type: Schema.Types.ObjectId, ref: "Course", required: true },
-    batch: { type: Schema.Types.ObjectId, ref: "Batch", required: true },
+    targetType: { type: String, enum: ["course", "batch"], default: "batch" },
+    batch: {
+      type: Schema.Types.ObjectId,
+      ref: "Batch",
+      required: function (this: IMaterial) {
+        return this.targetType === "batch";
+      },
+    },
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     title: { type: String, required: true, trim: true },
     description: { type: String, trim: true },
@@ -24,6 +36,7 @@ const MaterialSchema = new Schema<IMaterial>(
 );
 
 MaterialSchema.index({ batch: 1 });
+MaterialSchema.index({ course: 1 });
 
 const Material: Model<IMaterial> = models.Material || model<IMaterial>("Material", MaterialSchema);
 export default Material;

@@ -200,7 +200,13 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
   const graceSession = liveClasses.find((lc) => lc._id === graceLiveClassId);
   const graceDateStr = graceSession ? toUTCDateInput(graceSession.startTime) : sessionDateStr;
   const scheduledCount = liveClasses.filter((lc) => lc.status !== "cancelled").length;
+  // Classes that have actually run: non-cancelled and past their start time.
+  const heldCount = liveClasses.filter(
+    (lc) => lc.status !== "cancelled" && new Date(lc.startTime).getTime() <= Date.now()
+  ).length;
   const totalClasses = selectedBatchObj?.totalClasses ?? 0;
+  // "Remaining" here gates scheduling, so it counts slots left to schedule
+  // (planned − already scheduled), not planned − held.
   const remainingClasses = totalClasses > 0 ? Math.max(0, totalClasses - scheduledCount) : null;
   const classesCapReached = remainingClasses !== null && remainingClasses <= 0;
 
@@ -605,11 +611,12 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
       </div>
 
       {selectedBatch && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <StatCard label="Total classes" value={totalClasses > 0 ? totalClasses : "Uncapped"} icon={ListChecks} />
           <StatCard label="Classes scheduled" value={scheduledCount} icon={Video} />
+          <StatCard label="Classes held so far" value={heldCount} icon={Video} />
           <StatCard
-            label="Classes remaining"
+            label="Slots left to schedule"
             value={remainingClasses !== null ? remainingClasses : "—"}
             icon={ListChecks}
             tone={classesCapReached ? "warning" : "default"}

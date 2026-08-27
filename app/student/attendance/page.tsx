@@ -36,6 +36,7 @@ interface Batch {
 }
 interface LiveClass {
   _id: string;
+  startTime: string;
   status: "scheduled" | "completed" | "cancelled";
 }
 
@@ -61,10 +62,17 @@ export default function StudentAttendancePage() {
 
   const stats = useMemo(() => {
     const present = records.filter((r) => r.status === "present").length;
-    const scheduledCount = liveClasses.filter((lc) => lc.status !== "cancelled").length;
+    // "Held" = non-cancelled live classes whose start time has passed. All three
+    // tiles derive from this so they reconcile: held + remaining = planned.
+    // (A student can still carry an attendance record for a class that was later
+    // cancelled or for a legacy day-keyed mark, so records.length may exceed it.)
+    const now = Date.now();
+    const held = liveClasses.filter(
+      (lc) => lc.status !== "cancelled" && new Date(lc.startTime).getTime() <= now
+    ).length;
     const totalClasses = batch?.totalClasses ?? 0;
-    const remaining = totalClasses > 0 ? Math.max(0, totalClasses - scheduledCount) : null;
-    return { total: records.length, present, pct: percentage(present, records.length), totalClasses, remaining };
+    const remaining = totalClasses > 0 ? Math.max(0, totalClasses - held) : null;
+    return { held, present, pct: percentage(present, records.length), totalClasses, remaining };
   }, [records, liveClasses, batch]);
 
   return (
@@ -74,7 +82,7 @@ export default function StudentAttendancePage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         <StatCard label="Attendance %" value={`${stats.pct}%`} icon={CalendarCheck} tone={stats.pct >= 75 ? "success" : "warning"} />
         <StatCard label="Classes attended" value={stats.present} icon={CalendarCheck} />
-        <StatCard label="Classes held so far" value={stats.total} icon={CalendarCheck} />
+        <StatCard label="Classes held so far" value={stats.held} icon={CalendarCheck} />
         <StatCard label="Planned classes" value={stats.totalClasses > 0 ? stats.totalClasses : "Uncapped"} icon={CalendarCheck} />
         <StatCard label="Classes remaining" value={stats.remaining !== null ? stats.remaining : "—"} icon={CalendarCheck} />
       </div>

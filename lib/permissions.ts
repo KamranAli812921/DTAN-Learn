@@ -49,6 +49,19 @@ export async function assertTeacherOwnsBatch(teacherProfileId: string, batchId: 
   }
 }
 
+/**
+ * Assert that a teacher teaches the given course, i.e. is assigned to at least
+ * one of its batches. Used for course-wide resources (e.g. course-scoped
+ * materials) that aren't tied to a single batch.
+ */
+export async function assertTeacherOwnsCourse(teacherProfileId: string, courseId: string): Promise<void> {
+  if (!isValidObjectId(courseId)) throw new ApiError(400, "Invalid course id.");
+  const batch = await Batch.findOne({ course: courseId, teacher: teacherProfileId });
+  if (!batch) {
+    throw new ApiError(403, "You do not teach this course.");
+  }
+}
+
 /** Return the list of batch ids a teacher is assigned to. */
 export async function getTeacherBatchIds(teacherProfileId: string): Promise<string[]> {
   const batches = await Batch.find({ teacher: teacherProfileId }).select("_id");

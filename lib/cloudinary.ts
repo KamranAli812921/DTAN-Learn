@@ -7,6 +7,8 @@ cloudinary.config({
   secure: true,
 });
 
+export const IMAGE_UPLOAD_EXTENSIONS = ["png", "jpg", "jpeg", "gif"];
+
 export const ALLOWED_UPLOAD_EXTENSIONS = [
   "pdf",
   "doc",
@@ -16,12 +18,9 @@ export const ALLOWED_UPLOAD_EXTENSIONS = [
   "xls",
   "xlsx",
   "zip",
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
   "txt",
   "md",
+  ...IMAGE_UPLOAD_EXTENSIONS,
 ];
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20MB
@@ -54,10 +53,19 @@ export async function uploadToCloudinary(
   }
 
   const safeName = sanitizeFilename(opts.filename);
+  const isImage = IMAGE_UPLOAD_EXTENSIONS.includes(ext);
+  const baseId = `${Date.now()}-${safeName}`.replace(/\.[^.]+$/, "");
+
+  // Documents (PDF, Office, zip, text) go up as "raw": Cloudinary otherwise
+  // classifies a PDF as an "image" and refuses to deliver it unless the
+  // account has "Allow delivery of PDF and ZIP files" enabled, which surfaces
+  // to students as "Failed to load PDF document". Raw assets are served as-is,
+  // but Cloudinary doesn't append the format to a raw public_id, so the
+  // extension has to be part of it for the browser to recognise the type.
   const result = await cloudinary.uploader.upload(dataUri, {
     folder: `dtan-learn/${opts.folder}`,
-    public_id: `${Date.now()}-${safeName}`.replace(/\.[^.]+$/, ""),
-    resource_type: "auto",
+    public_id: isImage ? baseId : `${baseId}.${ext}`,
+    resource_type: isImage ? "image" : "raw",
     overwrite: false,
   });
 
