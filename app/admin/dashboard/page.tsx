@@ -25,9 +25,7 @@ interface AdminSummary {
 
 const ATTENDANCE_COLORS: Record<string, string> = {
   present: "#0f9c86", // matches the --success token (teal-green, distinct from the primary brand green)
-  late: "#f59e0b",
   absent: "#dc2626",
-  excused: "#64748b",
 };
 
 export default function AdminDashboardPage() {

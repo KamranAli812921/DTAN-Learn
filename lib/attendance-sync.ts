@@ -13,31 +13,42 @@ function startOfDay(d: Date): Date {
 }
 
 /**
- * Recompute status from sessions + the live class definition:
- *  - absent  : no sessions logged at all
- *  - late    : the first (earliest) session started after the allowed
- *              joining window (startTime + joinWindowMinutes)
+ * Recompute status from sessions + the live class definition. Only two
+ * statuses exist:
+ *  - absent  : no sessions logged, or total duration across all sessions
+ *              falls short of 70% of the class duration
  *  - present : total duration across all sessions >= 70% of class duration
- *  - late    : attended within the window but total duration fell short of
- *              70% (spec doesn't define a distinct "partial" status; this is
- *              the closest fit, and can always be manually overridden)
+ * "Late" is not a status — see isLateArrival below, which surfaces it as a
+ * note alongside whichever status this returns.
  */
 export function computeAttendanceStatus(
   sessions: IAttendanceSession[],
-  liveClass: { startTime: Date; durationMinutes: number; joinWindowMinutes: number }
+  liveClass: { durationMinutes: number }
 ): AttendanceStatus {
   if (!sessions.length) return "absent";
-
-  const sorted = [...sessions].sort((a, b) => a.joinTime.getTime() - b.joinTime.getTime());
-  const firstJoin = sorted[0].joinTime;
-  const windowEnd = new Date(liveClass.startTime.getTime() + liveClass.joinWindowMinutes * 60_000);
-
-  if (firstJoin.getTime() > windowEnd.getTime()) return "late";
 
   const totalDurationMinutes = sessions.reduce((sum, s) => sum + s.durationMinutes, 0);
   const threshold = 0.7 * liveClass.durationMinutes;
 
-  return totalDurationMinutes >= threshold ? "present" : "late";
+  return totalDurationMinutes >= threshold ? "present" : "absent";
+}
+
+/**
+ * True when the student's first (earliest) session started after the
+ * allowed joining window (startTime + joinWindowMinutes) — surfaced in the
+ * UI as a small "Late" note, independent of the present/absent status
+ * computed above.
+ */
+export function isLateArrival(
+  sessions: IAttendanceSession[],
+  liveClass: { startTime: Date; joinWindowMinutes: number }
+): boolean {
+  if (!sessions.length) return false;
+
+  const firstJoin = sessions.reduce((earliest, s) => (s.joinTime < earliest ? s.joinTime : earliest), sessions[0].joinTime);
+  const windowEnd = new Date(liveClass.startTime.getTime() + liveClass.joinWindowMinutes * 60_000);
+
+  return firstJoin.getTime() > windowEnd.getTime();
 }
 
 /**
@@ -109,6 +120,7 @@ export async function mergeAttendanceSegment(params: {
 
   attendance.totalDurationMinutes = attendance.sessions.reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
   attendance.status = computeAttendanceStatus(attendance.sessions, liveClass);
+  attendance.isLate = isLateArrival(attendance.sessions, liveClass);
   attendance.liveClass = liveClass._id;
   attendance.zoomMeetingId = params.zoomMeetingId;
   attendance.source = "zoom";

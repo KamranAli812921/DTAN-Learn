@@ -7,7 +7,6 @@ const statusMap: Record<string, { label: string; variant: "default" | "secondary
   present: { label: "Present", variant: "success" },
   absent: { label: "Absent", variant: "destructive" },
   late: { label: "Late", variant: "warning" },
-  excused: { label: "Excused", variant: "outline" },
   draft: { label: "Draft", variant: "secondary" },
   published: { label: "Published", variant: "success" },
   archived: { label: "Archived", variant: "secondary" },

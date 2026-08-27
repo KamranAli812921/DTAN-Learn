@@ -25,7 +25,7 @@ export const GET = withErrorHandling(async () => {
       .limit(5),
   ]);
 
-  const presentCount = attendanceRecords.filter((a) => a.status === "present" || a.status === "late").length;
+  const presentCount = attendanceRecords.filter((a) => a.status === "present").length;
   const attendancePercentage = attendanceRecords.length ? Math.round((presentCount / attendanceRecords.length) * 1000) / 10 : 0;
 
   const submittedAssignmentIds = new Set(submissions.map((s) => s.assignment.toString()));

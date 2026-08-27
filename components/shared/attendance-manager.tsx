@@ -41,7 +41,8 @@ interface AttendanceSession {
 interface AttendanceRecord {
   _id: string;
   student: Student;
-  status: "present" | "absent" | "late" | "excused";
+  status: "present" | "absent";
+  isLate?: boolean;
   source: "zoom" | "manual";
   totalDurationMinutes: number;
   sessions: AttendanceSession[];
@@ -770,7 +771,10 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
                               <div className="text-xs text-muted-foreground">{s.studentId}</div>
                             </TableCell>
                             <TableCell>
-                              <StatusBadge status={record?.status ?? "absent"} />
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <StatusBadge status={record?.status ?? "absent"} />
+                                {record?.isLate && <StatusBadge status="late" />}
+                              </div>
                               {record?.remarks && (
                                 <p className="text-xs text-muted-foreground mt-1 max-w-[220px] break-words">
                                   {record.remarks}
@@ -843,7 +847,10 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
                           <p className="text-xs text-muted-foreground">{s.studentId}</p>
                         </MobileCardHeader>
                         <MobileField label="Status">
-                          <StatusBadge status={record?.status ?? "absent"} />
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <StatusBadge status={record?.status ?? "absent"} />
+                            {record?.isLate && <StatusBadge status="late" />}
+                          </div>
                         </MobileField>
                         {record?.remarks && (
                           <MobileField label="Reason">
@@ -903,8 +910,6 @@ export function AttendanceManager({ role }: { role: "admin" | "teacher" }) {
                 <SelectContent>
                   <SelectItem value="present">Present</SelectItem>
                   <SelectItem value="absent">Absent</SelectItem>
-                  <SelectItem value="late">Late</SelectItem>
-                  <SelectItem value="excused">Excused</SelectItem>
                 </SelectContent>
               </Select>
             </div>

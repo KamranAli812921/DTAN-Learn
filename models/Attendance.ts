@@ -1,6 +1,6 @@
 import { Schema, model, models, type Document, type Model, type Types } from "mongoose";
 
-export type AttendanceStatus = "present" | "absent" | "late" | "excused";
+export type AttendanceStatus = "present" | "absent";
 export type AttendanceSource = "zoom" | "manual";
 
 export interface IAttendanceSession {
@@ -18,6 +18,11 @@ export interface IAttendance extends Document {
   liveClass?: Types.ObjectId;
   date: Date;
   status: AttendanceStatus;
+  /** True when the student's first join was after the live class's join
+   *  window — surfaced as a small "Late" note alongside the status rather
+   *  than as its own status, since present/absent is decided purely by
+   *  total duration attended. */
+  isLate: boolean;
   markedBy?: Types.ObjectId;
   source: AttendanceSource;
   zoomMeetingId?: string;
@@ -44,7 +49,8 @@ const AttendanceSchema = new Schema<IAttendance>(
     batch: { type: Schema.Types.ObjectId, ref: "Batch", required: true },
     liveClass: { type: Schema.Types.ObjectId, ref: "LiveClass" },
     date: { type: Date, required: true },
-    status: { type: String, enum: ["present", "absent", "late", "excused"], default: "absent" },
+    status: { type: String, enum: ["present", "absent"], default: "absent" },
+    isLate: { type: Boolean, default: false },
     markedBy: { type: Schema.Types.ObjectId, ref: "User" },
     source: { type: String, enum: ["zoom", "manual"], default: "manual" },
     zoomMeetingId: { type: String },

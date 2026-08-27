@@ -5,12 +5,12 @@ export const manualAttendanceSchema = z.object({
   student: objectId,
   batch: objectId,
   date: z.coerce.date(),
-  status: z.enum(["present", "absent", "late", "excused"]),
+  status: z.enum(["present", "absent"]),
   remarks: z.string().max(500).optional(),
 });
 
 export const attendanceOverrideSchema = z.object({
-  status: z.enum(["present", "absent", "late", "excused"]),
+  status: z.enum(["present", "absent"]),
   reason: z.string().min(3, "A reason is required for manual overrides.").max(500),
 });
 

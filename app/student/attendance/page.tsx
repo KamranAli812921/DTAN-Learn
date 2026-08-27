@@ -22,7 +22,8 @@ interface AttendanceSession {
 interface AttendanceRecord {
   _id: string;
   date: string;
-  status: "present" | "absent" | "late" | "excused";
+  status: "present" | "absent";
+  isLate?: boolean;
   source: "zoom" | "manual";
   totalDurationMinutes: number;
   sessions: AttendanceSession[];
@@ -58,7 +59,7 @@ export default function StudentAttendancePage() {
   }, []);
 
   const stats = useMemo(() => {
-    const present = records.filter((r) => r.status === "present" || r.status === "late").length;
+    const present = records.filter((r) => r.status === "present").length;
     const scheduledCount = liveClasses.filter((lc) => lc.status !== "cancelled").length;
     const totalClasses = batch?.totalClasses ?? 0;
     const remaining = totalClasses > 0 ? Math.max(0, totalClasses - scheduledCount) : null;
@@ -104,7 +105,10 @@ export default function StudentAttendancePage() {
                         <TableRow key={r._id} className="align-top">
                           <TableCell className="font-medium">{formatDate(r.date)}</TableCell>
                           <TableCell>
-                            <StatusBadge status={r.status} />
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <StatusBadge status={r.status} />
+                              {r.isLate && <StatusBadge status="late" />}
+                            </div>
                           </TableCell>
                           <TableCell>
                             {r.sessions?.length > 0 ? (
@@ -144,7 +148,10 @@ export default function StudentAttendancePage() {
                         <p className="font-medium">{formatDate(r.date)}</p>
                       </MobileCardHeader>
                       <MobileField label="Status">
-                        <StatusBadge status={r.status} />
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <StatusBadge status={r.status} />
+                          {r.isLate && <StatusBadge status="late" />}
+                        </div>
                       </MobileField>
                       {r.sessions?.length > 0 ? (
                         <AccordionItem value={r._id} className="border-none -mx-1">
